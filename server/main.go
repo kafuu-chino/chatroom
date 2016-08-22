@@ -1,6 +1,7 @@
 package main
 
 import (
+	"container/list"
 	"fmt"
 	"io"
 	"net"
@@ -25,6 +26,38 @@ func newConn(c net.Conn) *connection {
 	}
 }
 
+type queue struct {
+	time  time.Time
+	slice []byte
+}
+
+func makeBuffer() []byte {
+	return make([]byte, 256)
+}
+
+func makeRecycler() (in, out chan []byte) {
+	in = make(chan []byte)
+	out = make(chan []byte)
+	go func() {
+		q := list.New()
+		for {
+			if q.Len() == 0 {
+				q.PushFront(queue{time: time.Now(), slice: makeBuffer()})
+			}
+
+			e := q.Front()
+			select {
+			case b := <-out:
+				q.PushFront(queue{time: time.Now(), slice: b})
+			case in <- e.Value.(queue).slice:
+				q.Remove(e)
+			}
+		}
+	}()
+
+	return
+}
+
 func main() {
 	ln, err := net.Listen("tcp", ":8070")
 	if err != nil {
@@ -33,6 +66,8 @@ func main() {
 		return
 	}
 	fmt.Println("Start server success!")
+
+	in, out := makeRecycler()
 
 	// keep accepting connection and handle it
 	for {
@@ -46,20 +81,22 @@ func main() {
 
 		conns = append(conns, *conn)
 		fmt.Printf("Accept a connect %s! \r\n", conn.RemoteAddr().String())
-		go handleConnection(conn)
+
+		go handleConnection(conn, in, out)
 		go heartBeat(conn)
 	}
 }
 
 // handleConnection receives message and send to other clients
-func handleConnection(conn *connection) {
-	buf := make([]byte, 256)
+func handleConnection(conn *connection, in, out chan []byte) {
 	for {
+		buf := <-in
 		i, err := conn.Read(buf)
 		if err != nil {
 			// connection has been closed and waiting to remove
 			if err == io.EOF {
 				fmt.Printf("%s has been disconnected! \r\n", conn.RemoteAddr().String())
+				out <- buf
 				break
 			}
 
@@ -75,11 +112,12 @@ func handleConnection(conn *connection) {
 		message := string(buf[0:i])[1:]
 
 		if message != "" {
-			fmt.Println(conn.RemoteAddr().String(), ":", message)
+			message = conn.RemoteAddr().String() + " : " + message
+			fmt.Println(message)
 
 			for _, v := range conns {
 				if v != *conn {
-					_, err := v.Write(buf[0:i])
+					_, err := v.Write([]byte(message))
 					if err != nil {
 						fmt.Printf("Send message to %s failed(%s) and closed!", conn.RemoteAddr().String(), err.Error())
 						continue
