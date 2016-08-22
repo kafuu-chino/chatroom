@@ -61,7 +61,7 @@ func readConnection(conn *connection) {
 	for {
 		i, err := conn.Read(buf)
 		if err == nil {
-			fmt.Println(conn.RemoteAddr().String(), ":", string(buf[0:i]))
+			fmt.Println(string(buf[0:i]))
 		}
 	}
 }
