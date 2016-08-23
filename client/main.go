@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -24,7 +25,23 @@ func newConn(c net.Conn) *connection {
 }
 
 func main() {
-	c, err := net.Dial("tcp", "127.0.0.1:8070")
+
+	flag.Parse()
+	args := flag.Args()
+	if len(args) > 1 {
+		fmt.Println("Too many parameters!")
+		return
+	}
+
+	// default value
+	ipport := "127.0.0.1:8070"
+
+	// use first parameter to ip:port
+	if len(args) == 1 {
+		ipport = args[0]
+	}
+
+	c, err := net.Dial("tcp", ipport)
 	if err != nil {
 		fmt.Println("Connect failed!")
 		return
