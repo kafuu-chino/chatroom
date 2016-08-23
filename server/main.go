@@ -2,6 +2,7 @@ package main
 
 import (
 	"container/list"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -27,29 +28,31 @@ func newConn(c net.Conn) *connection {
 }
 
 type queue struct {
-	time  time.Time
-	slice []byte
+	time   time.Time
+	buffer []byte
 }
 
 func makeBuffer() []byte {
 	return make([]byte, 256)
 }
 
+// makeRecycler dynamic provision and recovery of buffer
 func makeRecycler() (in, out chan []byte) {
 	in = make(chan []byte)
 	out = make(chan []byte)
 	go func() {
 		q := list.New()
 		for {
+			// when buffer list empty make new buffer
 			if q.Len() == 0 {
-				q.PushFront(queue{time: time.Now(), slice: makeBuffer()})
+				q.PushFront(queue{time: time.Now(), buffer: makeBuffer()})
 			}
 
 			e := q.Front()
 			select {
 			case b := <-out:
-				q.PushFront(queue{time: time.Now(), slice: b})
-			case in <- e.Value.(queue).slice:
+				q.PushFront(queue{time: time.Now(), buffer: b})
+			case in <- e.Value.(queue).buffer:
 				q.Remove(e)
 			}
 		}
@@ -59,7 +62,23 @@ func makeRecycler() (in, out chan []byte) {
 }
 
 func main() {
-	ln, err := net.Listen("tcp", ":8070")
+
+	flag.Parse()
+	args := flag.Args()
+	if len(args) > 1 {
+		fmt.Println("Too many parameters!")
+		return
+	}
+
+	// default value
+	port := "8070"
+
+	// use first parameter to port
+	if len(args) == 1 {
+		port = args[0]
+	}
+
+	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		fmt.Println(err)
 		fmt.Printf("Start server failed(%s)! \r\n", err.Error())
