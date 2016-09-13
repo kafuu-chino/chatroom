@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -15,7 +16,7 @@ const (
 	QueueExpireSeconds = 300
 )
 
-// multi thread safe list of connections
+// concurrency safe list of connections
 var conns connList
 
 type connection struct {
@@ -224,8 +225,8 @@ func handleConnection(conn *connection, in, out chan []byte) {
 	for {
 		i, err := conn.Read(buf)
 		if err != nil {
-			// connection has been closed and waiting to remove
-			if err == io.EOF {
+			// connection has been disconnected and waiting to remove
+			if err == io.EOF && strings.Contains(err.Error(), "use of closed network connection") {
 				fmt.Printf("%s has been disconnected! \r\n", conn.RemoteAddr().String())
 				out <- buf
 				return
